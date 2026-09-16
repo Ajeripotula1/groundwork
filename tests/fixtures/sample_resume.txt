@@ -1,0 +1,26 @@
+Jane Doe
+jane.doe@email.com | (555) 123-4567 | San Francisco, CA
+linkedin.com/in/janedoe | github.com/janedoe
+
+EDUCATION
+University of California, Berkeley
+B.S. Computer Science, Aug 2018 - May 2022
+GPA: 3.8/4.0
+
+EXPERIENCE
+Software Engineer, Acme Corp
+Jun 2022 - Present
+- Built a REST API using FastAPI and PostgreSQL serving 10k requests/day
+- Migrated legacy monolith to microservices, reducing deploy time by 40%
+- Mentored 2 junior engineers on backend best practices
+
+PROJECTS
+Personal Finance Tracker (github.com/janedoe/finance-tracker)
+- Built a React + Node.js app for tracking personal expenses
+- Used Chart.js for spending visualizations
+
+CERTIFICATIONS
+AWS Certified Solutions Architect - Associate, Issued Mar 2023
+
+SKILLS
+Python, JavaScript, FastAPI, React, PostgreSQL, Docker, AWS, Git

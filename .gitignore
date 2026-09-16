@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Virtual environment
+.venv/
+venv/
+
+# Test/lint/type-checker caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets — real values live in .env, never committed. .env.example is the template.
+.env
+
+# Editors/IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Frontend (Slice 8) — no frontend/ exists yet, but node_modules is never
+# something to commit once it does.
+node_modules/
+
+# Logs
+*.log

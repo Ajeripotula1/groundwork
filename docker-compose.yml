@@ -1,0 +1,28 @@
+# Local-only Postgres for development. In AWS this same role is played by
+# Supabase (Postgres + pgvector) — the schema and queries we write against
+# this container should work unchanged against Supabase later, since both
+# are just Postgres with the pgvector extension enabled.
+services:
+  postgres:
+    # Official pgvector image: plain Postgres 16 with the pgvector extension
+    # pre-built, so `CREATE EXTENSION vector;` works without compiling anything.
+    image: pgvector/pgvector:pg16
+    container_name: groundwork-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: groundwork
+      POSTGRES_PASSWORD: groundwork
+      POSTGRES_DB: groundwork
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume so data survives `docker compose down` (but not `-v`).
+      - groundwork_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U groundwork -d groundwork"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  groundwork_pgdata:
