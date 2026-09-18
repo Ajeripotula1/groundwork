@@ -74,25 +74,25 @@ def test_submit_profile_pdf_inserts_a_new_row_each_time(monkeypatch):
     assert len(calls) == 2
 
 
-def test_get_profile_returns_latest_profile(monkeypatch):
+def test_get_profile_returns_profile_by_id(monkeypatch):
     stored = _fake_profile().model_dump(mode="json")
     monkeypatch.setattr(
-        "groundwork.api.routers.profile.get_latest_profile",
-        lambda engine: {"id": 2, "data": stored, "created_at": None},
+        "groundwork.api.routers.profile.get_profile",
+        lambda engine, id: {"id": id, "data": stored, "created_at": None},
     )
 
-    response = client.get("/profile")
+    response = client.get("/profile", params={"id": 2})
 
     assert response.status_code == 200
     assert response.json()["contact"]["name"] == "Jane Doe"
 
 
-def test_get_profile_returns_404_when_nothing_stored(monkeypatch):
+def test_get_profile_returns_404_when_id_not_found(monkeypatch):
     monkeypatch.setattr(
-        "groundwork.api.routers.profile.get_latest_profile", lambda engine: None
+        "groundwork.api.routers.profile.get_profile", lambda engine, id: None
     )
 
-    response = client.get("/profile")
+    response = client.get("/profile", params={"id": 999})
 
     assert response.status_code == 404
 

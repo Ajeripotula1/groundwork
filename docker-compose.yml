@@ -24,5 +24,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # Local-only trace viewer for the agent (groundwork.agent.tracing).
+  # Receives OTLP traces Strands already emits per model/tool call - no
+  # custom code needed to read them, just a UI at http://localhost:16686.
+  # Dev tool only, like Postgres above - production tracing (AgentCore
+  # Observability or similar) is a separate decision, BUILD_PLAN.md Slice 9.
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: groundwork-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # web UI
+      - "4318:4318"   # OTLP HTTP receiver - what setup_otlp_exporter() sends to
+
 volumes:
   groundwork_pgdata:

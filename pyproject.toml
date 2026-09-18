@@ -48,6 +48,18 @@ dependencies = [
     # enough for typical single-column resume PDFs; revisit if real
     # uploads come back with garbled/missing text.
     "pypdf>=4.0",
+    # [otel] extra pulls in opentelemetry-exporter-otlp-proto-http - Strands'
+    # trace/tool-call instrumentation already exists without it (see
+    # groundwork/agent/shared/tracing.py), but setup_otlp_exporter() (what
+    # sends those traces to Jaeger) needs the actual OTLP exporter package.
+    "strands-agents[otel]>=1.56.0",
+    "strands-agents-tools>=0.8.9",
+    # BedrockAgentCoreApp - the ASGI app + @app.entrypoint decorator each
+    # agent module (groundwork/agent/score_fit, groundwork/agent/job_agent)
+    # exposes so `agentcore launch` can deploy it as its own Runtime
+    # container. Local-only for now (no Memory/Gateway/Identity resources
+    # configured yet) - just the deployment shape.
+    "bedrock-agentcore>=1.23.1",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +68,12 @@ dev = [
     # FastAPI's TestClient (starlette.testclient) needs this to actually
     # issue requests against the app in-process, without a real server.
     "httpx2>=1.0",
+    # `agentcore` CLI (configure/launch/invoke) - the runtime package
+    # (bedrock-agentcore, main deps) only gives each agent module its
+    # BedrockAgentCoreApp; this is what builds/runs it as an actual
+    # AgentCore Runtime container. Dev-only: never needed at runtime inside
+    # the deployed container itself.
+    "bedrock-agentcore-starter-toolkit>=0.3.13",
 ]
 
 # Layer 0 uses a "src layout": the importable package lives under src/groundwork

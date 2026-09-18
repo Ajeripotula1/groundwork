@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     # Bedrock inference-profile ID for the resume-extraction utility
     bedrock_extraction_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    bedrock_agent_model_id: str = "us.anthropic.claude-sonnet-4-6"
 
 
 @lru_cache

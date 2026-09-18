@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from groundwork.db.engine import get_engine
-from groundwork.db.profile import get_latest_profile, insert_profile
+from groundwork.db.profile import get_profile, insert_profile
 from groundwork.extraction.extract import extract_profile
 from groundwork.extraction.pdf import extract_text_from_pdf
 from groundwork.extraction.schema import ExtractedProfile
@@ -55,11 +55,11 @@ async def submit_profile_pdf(file: UploadFile) -> ExtractedProfile:
 
 
 @router.get("", response_model=ExtractedProfile)
-def get_profile() -> ExtractedProfile:
-    """Return the most recently submitted profile, or 404 if none exist yet."""
-    row = get_latest_profile(get_engine())
+def read_profile(id: int) -> ExtractedProfile:
+    """Return the profile with the given id, or 404 if it doesn't exist."""
+    row = get_profile(get_engine(), id)
     if row is None:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="no profile has been submitted yet"
+            status.HTTP_404_NOT_FOUND, detail="no profile with that id"
         )
     return ExtractedProfile.model_validate(row["data"])

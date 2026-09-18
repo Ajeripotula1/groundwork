@@ -33,3 +33,10 @@ node_modules/
 
 # Logs
 *.log
+
+# agentcore configure/deploy generates these per-machine (account id, image
+# tags, local source paths) - never something to commit, same reasoning as
+# .env above.
+.bedrock_agentcore.yaml
+.bedrock_agentcore/
+.dockerignore
