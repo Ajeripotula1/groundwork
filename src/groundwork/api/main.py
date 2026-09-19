@@ -19,11 +19,12 @@ Then, e.g.:
 
 from fastapi import FastAPI
 
-from groundwork.api.routers import profile
+from groundwork.api.routers import jobs, profile
 
 app = FastAPI(title="GroundWork API")
 
 app.include_router(profile.router)
+app.include_router(jobs.router)
 
 
 @app.get("/health")
