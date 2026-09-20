@@ -14,16 +14,13 @@ public functions, which do that internally.
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from groundwork.agent.job_agent.agent import invoke as invoke_job_agent
 from groundwork.agent.score_fit.agent import invoke as invoke_score_fit
-from groundwork.agent.shared.memory import (
-    SINGLE_USER_ACTOR_ID,
-    job_session_id,
-    list_conversation,
-)
+from groundwork.agent.shared.memory import job_session_id, list_conversation
+from groundwork.api.auth import get_current_user_id
 from groundwork.agent.shared.schema import FitAssessment
 from groundwork.db.agent_runs import KIND_SCORE_FIT, get_latest_successful_result
 from groundwork.db.engine import get_engine
@@ -92,7 +89,11 @@ def read_job(job_id: int) -> JobDetail:
 
 #### Score Fit Agent generate new score or retreieve latest score for specific job ####
 @router.post("/{job_id}/score", response_model=FitAssessment)
-def run_score_fit(job_id: int, body: ScoreFitRequest | None = None) -> FitAssessment:
+def run_score_fit(
+    job_id: int,
+    body: ScoreFitRequest | None = None,
+    current_user_id: str = Depends(get_current_user_id),
+) -> FitAssessment:
     """Trigger a fresh Score Fit run for this job - always re-runs, never
     serves a cached result (GET below does that). Mirrors
     continue_job_agent's in-process invoke() pattern.
@@ -104,14 +105,20 @@ def run_score_fit(job_id: int, body: ScoreFitRequest | None = None) -> FitAssess
     """
     _require_job(job_id)
     profile_id = body.profile_id if body else None
-    result = invoke_score_fit({"job_id": job_id, "profile_id": profile_id})
+    result = invoke_score_fit(
+        {"job_id": job_id, "user_id": current_user_id, "profile_id": profile_id}
+    )
     if "error" in result:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=result["error"])
     return FitAssessment.model_validate(result)
 
 
 @router.get("/{job_id}/score", response_model=FitAssessment)
-def read_score_fit(job_id: int, profile_id: int | None = None) -> FitAssessment:
+def read_score_fit(
+    job_id: int,
+    profile_id: int | None = None,
+    current_user_id: str = Depends(get_current_user_id),
+) -> FitAssessment:
     """The latest successful stored Score Fit result for this job against
     `profile_id` (or the latest profile, if omitted), without re-running -
     404 if that (job, profile) pair has never been scored successfully.
@@ -122,14 +129,18 @@ def read_score_fit(job_id: int, profile_id: int | None = None) -> FitAssessment:
     see - see get_latest_successful_result's profile_id filter in
     groundwork.db.agent_runs for why this can't just be "latest run for
     this job" once a job's been scored against more than one profile.
+
+    `profile_id` here is client-supplied (a query param), so get_profile is
+    called with `current_user_id` to enforce ownership - see get_profile's
+    docstring; a mismatch reads back as the same 404 an unknown id gets.
     """
     _require_job(job_id)
     engine = get_engine()
     if profile_id is not None:
-        if get_profile(engine, profile_id) is None:
+        if get_profile(engine, profile_id, current_user_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no profile with id {profile_id}")
     else:
-        profile = get_latest_profile(engine)
+        profile = get_latest_profile(engine, current_user_id)
         if profile is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no profile has been submitted yet")
         profile_id = profile["id"]
@@ -142,7 +153,11 @@ def read_score_fit(job_id: int, profile_id: int | None = None) -> FitAssessment:
 
 
 @router.post("/{job_id}/agent", response_model=JobAgentTurnResponse)
-def continue_job_agent(job_id: int, body: JobAgentTurnRequest) -> JobAgentTurnResponse:
+def continue_job_agent(
+    job_id: int,
+    body: JobAgentTurnRequest,
+    current_user_id: str = Depends(get_current_user_id),
+) -> JobAgentTurnResponse:
     """Send one message to the Job Agent for this job and return its reply.
 
     A 404 here only means the job itself doesn't exist. invoke()'s own
@@ -153,13 +168,22 @@ def continue_job_agent(job_id: int, body: JobAgentTurnRequest) -> JobAgentTurnRe
     """
     _require_job(job_id)
     result = invoke_job_agent(
-        {"job_id": job_id, "message": body.message, "profile_id": body.profile_id}
+        {
+            "job_id": job_id,
+            "user_id": current_user_id,
+            "message": body.message,
+            "profile_id": body.profile_id,
+        }
     )
     return JobAgentTurnResponse(reply=result.get("reply") or result["error"])
 
 
 @router.get("/{job_id}/agent", response_model=list[JobAgentTurn])
-def read_job_agent_history(job_id: int, profile_id: int | None = None) -> list[JobAgentTurn]:
+def read_job_agent_history(
+    job_id: int,
+    profile_id: int | None = None,
+    current_user_id: str = Depends(get_current_user_id),
+) -> list[JobAgentTurn]:
     """Return this job's Job Agent conversation so far, oldest first.
 
     A conversation is scoped to (job_id, profile_id) - see job_session_id's
@@ -167,17 +191,25 @@ def read_job_agent_history(job_id: int, profile_id: int | None = None) -> list[J
     continue_job_agent's invoke() call did, the same way it did (an
     explicit id if given, else the latest profile), or it would read back
     a different, empty session than the one that turn actually wrote to.
+
+    `profile_id` here is client-supplied (a query param), so get_profile is
+    called with `current_user_id` to enforce ownership, same as
+    read_score_fit above - a mismatch reads back as the same 404 an unknown
+    id gets, and actor_id=current_user_id below (not a shared constant)
+    is what actually keeps this read scoped to the caller's own
+    conversation - see groundwork.agent.shared.memory's docstring on why
+    session_id alone isn't unique across users.
     """
     _require_job(job_id)
     if profile_id is not None:
-        if get_profile(get_engine(), profile_id) is None:
+        if get_profile(get_engine(), profile_id, current_user_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no profile with id {profile_id}")
     else:
-        profile = get_latest_profile(get_engine())
+        profile = get_latest_profile(get_engine(), current_user_id)
         if profile is None:
             return []
         profile_id = profile["id"]
     transcript = list_conversation(
-        actor_id=SINGLE_USER_ACTOR_ID, session_id=job_session_id(job_id, profile_id)
+        actor_id=current_user_id, session_id=job_session_id(job_id, profile_id)
     )
     return [JobAgentTurn(**turn) for turn in transcript]
