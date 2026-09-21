@@ -4,7 +4,7 @@ This is BUILD_PLAN.md Slice 1's loader - deliberately crude compared to
 Slice 8's eventual production poller. There's no scheduling and no
 diffing/change-tracking here: it just re-fetches everything and upserts,
 so re-running this against a board you've already loaded is safe (existing
-rows get overwritten in place, see groundwork.db.jobs.upsert_job) but not
+rows get overwritten in place, see jobsentinel.db.jobs.upsert_job) but not
 efficient. That tradeoff is fine for now - the point of this slice is
 "the agent can read one real job", not a production-grade ingestion path.
 
@@ -21,8 +21,8 @@ import argparse
 
 from explore_greenhouse import fetch_jobs
 
-from groundwork.db.engine import get_engine
-from groundwork.db.jobs import upsert_job
+from jobsentinel.db.engine import get_engine
+from jobsentinel.db.jobs import upsert_job
 
 
 def main() -> int:

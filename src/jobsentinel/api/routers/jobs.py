@@ -5,10 +5,10 @@ a Job Agent turn + fetch its conversation history. Everything a frontend
 needs for list -> view -> score -> (if scored) talk to the Job Agent ->
 see history - no more, per this slice's explicit scope-down.
 
-Calls straight into groundwork.agent.{score_fit,job_agent}.agent.invoke()
+Calls straight into jobsentinel.agent.{score_fit,job_agent}.agent.invoke()
 - in-process function calls, never a network hop to a deployed AgentCore
 Runtime. Per api/main.py's docstring on the hard architectural rule, this
-app never calls Bedrock itself; it only calls into groundwork.agent's
+app never calls Bedrock itself; it only calls into jobsentinel.agent's
 public functions, which do that internally.
 """
 
@@ -17,15 +17,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from groundwork.agent.job_agent.agent import invoke as invoke_job_agent
-from groundwork.agent.score_fit.agent import invoke as invoke_score_fit
-from groundwork.agent.shared.memory import job_session_id, list_conversation
-from groundwork.api.auth import get_current_user_id
-from groundwork.agent.shared.schema import FitAssessment
-from groundwork.db.agent_runs import KIND_SCORE_FIT, get_latest_successful_result
-from groundwork.db.engine import get_engine
-from groundwork.db.jobs import get_job, list_jobs
-from groundwork.db.profile import get_latest_profile, get_profile
+from jobsentinel.agent.job_agent.agent import invoke as invoke_job_agent
+from jobsentinel.agent.score_fit.agent import invoke as invoke_score_fit
+from jobsentinel.agent.shared.memory import job_session_id, list_conversation
+from jobsentinel.api.auth import get_current_user_id
+from jobsentinel.agent.shared.schema import FitAssessment
+from jobsentinel.db.agent_runs import KIND_SCORE_FIT, get_latest_successful_result
+from jobsentinel.db.engine import get_engine
+from jobsentinel.db.jobs import get_job, list_jobs
+from jobsentinel.db.profile import get_latest_profile, get_profile
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -127,7 +127,7 @@ def read_score_fit(
     (an explicit id if given, else the latest profile) so this reads back
     the same run a client that just POSTed with the same profile_id would
     see - see get_latest_successful_result's profile_id filter in
-    groundwork.db.agent_runs for why this can't just be "latest run for
+    jobsentinel.db.agent_runs for why this can't just be "latest run for
     this job" once a job's been scored against more than one profile.
 
     `profile_id` here is client-supplied (a query param), so get_profile is
@@ -197,7 +197,7 @@ def read_job_agent_history(
     read_score_fit above - a mismatch reads back as the same 404 an unknown
     id gets, and actor_id=current_user_id below (not a shared constant)
     is what actually keeps this read scoped to the caller's own
-    conversation - see groundwork.agent.shared.memory's docstring on why
+    conversation - see jobsentinel.agent.shared.memory's docstring on why
     session_id alone isn't unique across users.
     """
     _require_job(job_id)

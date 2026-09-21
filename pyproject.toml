@@ -3,18 +3,18 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "groundwork"
+name = "jobsentinel"
 version = "0.1.0"
 description = "Agentic job tracker and assistant."
 requires-python = ">=3.12"
 dependencies = [
     # Typed, validated settings loaded from environment variables / .env.
-    # See src/groundwork/config.py for why this replaces scattered os.getenv() calls.
+    # See src/jobsentinel/config.py for why this replaces scattered os.getenv() calls.
     "pydantic-settings>=2.4",
-    # ORM models (groundwork.db.models) are the schema's source of truth;
+    # ORM models (jobsentinel.db.models) are the schema's source of truth;
     # Alembic autogenerates migrations by diffing them against the live DB.
-    # Data-access functions (groundwork.db.jobs, etc.) still hand callers
-    # plain dicts, not live ORM objects — see groundwork/db/jobs.py for why.
+    # Data-access functions (jobsentinel.db.jobs, etc.) still hand callers
+    # plain dicts, not live ORM objects — see jobsentinel/db/jobs.py for why.
     "sqlalchemy>=2.0",
     # Postgres driver (psycopg 3, the current generation — not psycopg2).
     "psycopg[binary]>=3.1",
@@ -30,8 +30,8 @@ dependencies = [
     # Greenhouse/Lever both hand back rich-text HTML that needs stripping
     # down to plain text before it's usable by an LLM.
     "beautifulsoup4>=4.12",
-    # The API unit (Slice 2 on): thin HTTP layer over groundwork/db and,
-    # from Slice 3 on, groundwork/agent. Mangum-wrapping for Lambda is a
+    # The API unit (Slice 2 on): thin HTTP layer over jobsentinel/db and,
+    # from Slice 3 on, jobsentinel/agent. Mangum-wrapping for Lambda is a
     # later (deployment) slice - locally this just runs under uvicorn.
     "fastapi>=0.115",
     "uvicorn>=0.32",
@@ -50,16 +50,20 @@ dependencies = [
     "pypdf>=4.0",
     # [otel] extra pulls in opentelemetry-exporter-otlp-proto-http - Strands'
     # trace/tool-call instrumentation already exists without it (see
-    # groundwork/agent/shared/tracing.py), but setup_otlp_exporter() (what
+    # jobsentinel/agent/shared/tracing.py), but setup_otlp_exporter() (what
     # sends those traces to Jaeger) needs the actual OTLP exporter package.
     "strands-agents[otel]>=1.56.0",
     "strands-agents-tools>=0.8.9",
     # BedrockAgentCoreApp - the ASGI app + @app.entrypoint decorator each
-    # agent module (groundwork/agent/score_fit, groundwork/agent/job_agent)
+    # agent module (jobsentinel/agent/score_fit, jobsentinel/agent/job_agent)
     # exposes so `agentcore launch` can deploy it as its own Runtime
     # container. Local-only for now (no Memory/Gateway/Identity resources
     # configured yet) - just the deployment shape.
     "bedrock-agentcore>=1.23.1",
+    # JWT verification for Clerk-issued session tokens (jobsentinel.api.auth).
+    # The [crypto] extra pulls in `cryptography`, needed for RS256 - Clerk
+    # signs with RS256, not the symmetric HS256 PyJWT supports out of the box.
+    "pyjwt[crypto]>=2.9",
 ]
 
 [project.optional-dependencies]
@@ -76,7 +80,7 @@ dev = [
     "bedrock-agentcore-starter-toolkit>=0.3.13",
 ]
 
-# Layer 0 uses a "src layout": the importable package lives under src/groundwork
+# Layer 0 uses a "src layout": the importable package lives under src/jobsentinel
 # instead of at the repo root. This forces tests and tooling to import the
 # *installed* package (via `pip install -e .`) rather than accidentally
 # picking up whatever happens to be in the current working directory —

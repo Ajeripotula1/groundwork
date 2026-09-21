@@ -7,31 +7,31 @@ services:
     # Official pgvector image: plain Postgres 16 with the pgvector extension
     # pre-built, so `CREATE EXTENSION vector;` works without compiling anything.
     image: pgvector/pgvector:pg16
-    container_name: groundwork-postgres
+    container_name: jobsentinel-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: groundwork
-      POSTGRES_PASSWORD: groundwork
-      POSTGRES_DB: groundwork
+      POSTGRES_USER: jobsentinel
+      POSTGRES_PASSWORD: jobsentinel
+      POSTGRES_DB: jobsentinel
     ports:
       - "5432:5432"
     volumes:
       # Named volume so data survives `docker compose down` (but not `-v`).
-      - groundwork_pgdata:/var/lib/postgresql/data
+      - jobsentinel_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U groundwork -d groundwork"]
+      test: ["CMD-SHELL", "pg_isready -U jobsentinel -d jobsentinel"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Local-only trace viewer for the agent (groundwork.agent.tracing).
+  # Local-only trace viewer for the agent (jobsentinel.agent.tracing).
   # Receives OTLP traces Strands already emits per model/tool call - no
   # custom code needed to read them, just a UI at http://localhost:16686.
   # Dev tool only, like Postgres above - production tracing (AgentCore
   # Observability or similar) is a separate decision, BUILD_PLAN.md Slice 9.
   jaeger:
     image: jaegertracing/all-in-one:latest
-    container_name: groundwork-jaeger
+    container_name: jobsentinel-jaeger
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
@@ -40,4 +40,4 @@ services:
       - "4318:4318"   # OTLP HTTP receiver - what setup_otlp_exporter() sends to
 
 volumes:
-  groundwork_pgdata:
+  jobsentinel_pgdata:

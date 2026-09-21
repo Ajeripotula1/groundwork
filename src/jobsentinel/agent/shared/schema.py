@@ -4,20 +4,20 @@ Replaces an earlier free-text markdown output (a "**Fit Score: N**" header
 plus prose sections) with a validated schema, for two reasons: (1) a
 holistic 0-100 number turned out to be uncalibrated LLM-as-judge vibes, not
 a real calculation - see the design discussion that led here - and (2) the
-whole point of dropping this onto `agent_runs` (see groundwork.db.agent_runs)
+whole point of dropping this onto `agent_runs` (see jobsentinel.db.agent_runs)
 is for other agents (the Slice 5 Job Agent) and the eventual UI to consume
 this by field, not by re-parsing prose.
 
 Strands forces this shape via `structured_output_model` on the Agent
-(groundwork.agent.score_fit.agent.build_agent) - same tool-forced-schema
-mechanism as groundwork.extraction.extract's Bedrock Converse call, just
+(jobsentinel.agent.score_fit.agent.build_agent) - same tool-forced-schema
+mechanism as jobsentinel.extraction.extract's Bedrock Converse call, just
 routed through Strands instead of a raw boto3 client.
 
-Lives under `groundwork.agent.shared` (not inside score_fit/ or job_agent/)
+Lives under `jobsentinel.agent.shared` (not inside score_fit/ or job_agent/)
 because both agents' independent AgentCore Runtime deployments import it -
 score_fit's `structured_output_model` and job_agent's `get_fit_assessment`
 tool both need the same Match/FitAssessment shape, and each agent directory
-is its own deployable container (see groundwork/agent/__init__.py).
+is its own deployable container (see jobsentinel/agent/__init__.py).
 """
 
 from enum import Enum
@@ -34,7 +34,7 @@ class Match(str, Enum):
     behind it) without buying anything a 5-value category doesn't already
     give the UI/downstream agents. MATCH_DEFINITIONS below is what actually
     disciplines the model's judgment - see SYSTEM_PROMPT in both
-    groundwork.agent.score_fit.agent and groundwork.agent.job_agent.agent,
+    jobsentinel.agent.score_fit.agent and jobsentinel.agent.job_agent.agent,
     each built from this same dict so the prompt text and this enum's
     meaning never drift apart between the two agents.
     """
@@ -47,8 +47,8 @@ class Match(str, Enum):
 
 
 # Single source of truth for what each Match value means - interpolated into
-# both agents' SYSTEM_PROMPT (groundwork.agent.score_fit.agent and
-# groundwork.agent.job_agent.agent) so the model is told exactly this,
+# both agents' SYSTEM_PROMPT (jobsentinel.agent.score_fit.agent and
+# jobsentinel.agent.job_agent.agent) so the model is told exactly this,
 # and kept here so any other reader (a future UI tooltip, another engineer)
 # sees the identical definition instead of a second hand-typed copy that can
 # drift from what the model was actually told.

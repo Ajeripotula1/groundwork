@@ -11,7 +11,7 @@ gives you a searchable timeline of every model/tool call - latency, token
 usage, what the model said, what it called - for free, because that's
 what a trace viewer is for. No formatting code to write or maintain here.
 
-Complements, not replaces, groundwork.db.agent_runs: that table is
+Complements, not replaces, jobsentinel.db.agent_runs: that table is
 app-owned state other code queries (Slice 4's eval assertions, Slice 5's
 "has this job been scored" gating) - Jaeger is for a human to look at
 while debugging, not something application logic reads.
@@ -38,7 +38,7 @@ def enable_jaeger_tracing() -> None:
     than once per process would attach duplicate exporters and send every
     span twice. Safe to call from anywhere that might run more than once
     in a process - each agent's entrypoint module calls this once at import
-    time, gated on the GROUNDWORK_TRACE env var (see score_fit/agent.py and
+    time, gated on the JOBSENTINEL_TRACE env var (see score_fit/agent.py and
     job_agent/agent.py), rather than a CLI flag now that there's no CLI.
     """
     StrandsTelemetry().setup_otlp_exporter(endpoint="http://localhost:4318/v1/traces")

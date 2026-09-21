@@ -4,7 +4,7 @@ loads/validates from environment variables. This should pass before anything
 else gets built on top of it.
 """
 
-from groundwork.config import Settings
+from jobsentinel.config import Settings
 
 
 def test_settings_loads_from_env(monkeypatch):

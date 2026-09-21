@@ -1,7 +1,7 @@
 """Data access for `agent_runs`/`tool_calls` - the audit trail for every
 agent invocation (BUILD_PLAN.md Slice 3). Same shared-data-access pattern
-as groundwork.db.jobs/profile: the agent's CLI/tools are the only callers
-today, but this stays a separate module (not inlined into groundwork.agent)
+as jobsentinel.db.jobs/profile: the agent's CLI/tools are the only callers
+today, but this stays a separate module (not inlined into jobsentinel.agent)
 so the API can read run history directly later without reaching into the
 agent package - same hard architectural rule as everywhere else.
 
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Engine, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from groundwork.db.models import AgentRun, ToolCall
+from jobsentinel.db.models import AgentRun, ToolCall
 
 # Kept as constants, not free strings, so every caller/query spells them
 # identically - get_latest_run/get_latest_successful_result below are
@@ -39,41 +39,66 @@ KIND_SCORE_FIT = "score_fit"
 KIND_JOB_AGENT = "job_agent"
 
 
-def start_run(engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT) -> dict:
+def start_run(
+    engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT, profile_id: int | None = None
+) -> dict:
     """Open a new agent run for `job_id` and return it (with its assigned
     id and started_at). Call this before the agent ever touches Bedrock -
     a run row should exist even if the process crashes or the model call
     fails.
 
     `kind` distinguishes which capability this run is for ("score_fit" vs.
-    the future "job_agent") - see get_latest_run, which filters on it.
+    "job_agent") - see get_latest_run, which filters on it. `profile_id`
+    should already be a concrete id by the time it gets here (both
+    invoke()s resolve "latest" to one id before calling this - see
+    AgentRun.profile_id's docstring in jobsentinel.db.models) so this run is
+    attributable to the exact profile it scored/talked about, not
+    whatever's latest by the time someone queries it back.
     """
     now = datetime.now(timezone.utc)
     stmt = (
         pg_insert(AgentRun.__table__)
-        .values(job_id=job_id, kind=kind, started_at=now)
+        .values(job_id=job_id, kind=kind, profile_id=profile_id, started_at=now)
         .returning(AgentRun.__table__.c.id, AgentRun.__table__.c.started_at)
     )
     with engine.begin() as conn:
         row = conn.execute(stmt).one()
-        return {"id": row.id, "job_id": job_id, "kind": kind, "started_at": row.started_at}
+        return {
+            "id": row.id,
+            "job_id": job_id,
+            "kind": kind,
+            "profile_id": profile_id,
+            "started_at": row.started_at,
+        }
 
 
-def get_latest_run(engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT) -> dict | None:
+def get_latest_run(
+    engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT, profile_id: int | None = None
+) -> dict | None:
     """The most recent run of `kind` for `job_id`, regardless of outcome
     (a caller that only wants successful runs should check
     `result["outcome"] == "success"` itself, or use
     get_latest_successful_result below). Returns None if this job has
     never had a run of this kind.
 
+    `profile_id`: when given, only consider runs scored against that exact
+    profile - two profiles scored against the same job are otherwise
+    indistinguishable to this query (both just "a score_fit run for job
+    X"), which is exactly the bug this parameter exists to prevent. Left
+    as None matches the pre-profile_id behavior (latest run regardless of
+    which profile it used) for a caller that genuinely wants that.
+
     This is the single query both real requirements resolve to: Slice 5's
     Job Agent gate ("has Score Fit run for job X") and the "user revisits a
     job, show the score without re-generating it" case - see the row's
     `outcome`/`result` to tell those apart.
     """
+    conditions = [AgentRun.__table__.c.job_id == job_id, AgentRun.__table__.c.kind == kind]
+    if profile_id is not None:
+        conditions.append(AgentRun.__table__.c.profile_id == profile_id)
     stmt = (
         select(AgentRun.__table__)
-        .where(AgentRun.__table__.c.job_id == job_id, AgentRun.__table__.c.kind == kind)
+        .where(*conditions)
         .order_by(AgentRun.__table__.c.started_at.desc())
         .limit(1)
     )
@@ -83,7 +108,7 @@ def get_latest_run(engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT) -> d
 
 
 def get_latest_successful_result(
-    engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT
+    engine: Engine, job_id: int, kind: str = KIND_SCORE_FIT, profile_id: int | None = None
 ) -> dict | None:
     """The `result` JSONB (e.g. a FitAssessment.model_dump()) of the most
     recent *successful* run of `kind` for `job_id`, or None if no run of
@@ -91,14 +116,23 @@ def get_latest_successful_result(
     cached score on revisit without calling the agent again - deliberately
     not "most recent run regardless of outcome" (get_latest_run), since a
     failed run has no result worth showing.
+
+    `profile_id`: see get_latest_run's docstring - same filter, same reason.
+    Every real caller (job_agent's get_fit_assessment tool/gate check,
+    the API's GET /jobs/{id}/score) now passes a resolved concrete id, so
+    the same job scored against two profiles doesn't hand back whichever
+    happened to run more recently.
     """
+    conditions = [
+        AgentRun.__table__.c.job_id == job_id,
+        AgentRun.__table__.c.kind == kind,
+        AgentRun.__table__.c.outcome == "success",
+    ]
+    if profile_id is not None:
+        conditions.append(AgentRun.__table__.c.profile_id == profile_id)
     stmt = (
         select(AgentRun.__table__.c.result)
-        .where(
-            AgentRun.__table__.c.job_id == job_id,
-            AgentRun.__table__.c.kind == kind,
-            AgentRun.__table__.c.outcome == "success",
-        )
+        .where(*conditions)
         .order_by(AgentRun.__table__.c.started_at.desc())
         .limit(1)
     )
@@ -115,12 +149,19 @@ def end_run(
     result: dict | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
     cost_usd: float | None = None,
 ) -> None:
     """Close out a run once it finishes - successfully or not. `outcome` is
     a short status string ("success", "error: <message>"); `result` is the
-    model's actual structured output (groundwork.agent.shared.schema.FitAssessment.
+    model's actual structured output (jobsentinel.agent.shared.schema.FitAssessment.
     model_dump()) on success, left None on error.
+
+    `cache_read_tokens`/`cache_write_tokens`: Anthropic prompt caching's
+    usage counts, separate from `input_tokens` - see AgentRun's docstring
+    in jobsentinel.db.models and pricing.estimate_cost_usd, which is what
+    `cost_usd` should already reflect by the time it's passed in here.
     """
     now = datetime.now(timezone.utc)
     stmt = (
@@ -132,6 +173,8 @@ def end_run(
             result=result,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
             cost_usd=cost_usd,
         )
     )
@@ -142,7 +185,7 @@ def end_run(
 def log_tool_call(engine: Engine, run_id: int, tool_name: str, args: dict, result: dict) -> dict:
     """Record one tool invocation against `run_id`. `args`/`result` must
     already be JSON-safe (no bare datetimes, etc.) - see
-    groundwork.agent.tools for the helper that sanitizes tool output before
+    jobsentinel.agent.tools for the helper that sanitizes tool output before
     it gets here.
     """
     now = datetime.now(timezone.utc)

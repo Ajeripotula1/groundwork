@@ -11,11 +11,11 @@ one, never through each other.
 
 from datetime import datetime
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from groundwork.db.models import Job
+from jobsentinel.db.models import Job
 
 
 def upsert_job(engine: Engine, job: dict) -> int:
@@ -102,3 +102,27 @@ def get_job(engine: Engine, job_id: int) -> dict | None:
             "raw_json": job.raw_json,
             "fetched_at": job.fetched_at,
         }
+
+
+def list_jobs(engine: Engine) -> list[dict]:
+    """Every job, ordered by internal id, projected to summary fields only.
+
+    Deliberately excludes `description`/`raw_json` - those are large text
+    blobs only needed on the single-job detail view (get_job above), and
+    including them here would make a ~600-row response unnecessarily big.
+
+    No pagination or filtering params: today's only loaded board fits
+    comfortably in one response as summaries, and positions.py-based
+    filtering (or scoping by followed company) is real future job-feed
+    work, not something to build ahead of an actual need.
+    """
+    stmt = select(
+        Job.id,
+        Job.title,
+        Job.source,
+        Job.board_token,
+        Job.url,
+        Job.fetched_at,
+    ).order_by(Job.id)
+    with Session(engine) as session:
+        return [dict(row._mapping) for row in session.execute(stmt)]

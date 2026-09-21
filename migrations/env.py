@@ -5,8 +5,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from groundwork.config import get_settings
-from groundwork.db.models import Base
+from jobsentinel.config import get_settings
+from jobsentinel.db.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -17,12 +17,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Pull DATABASE_URL from groundwork.config instead of alembic.ini, so the
+# Pull DATABASE_URL from jobsentinel.config instead of alembic.ini, so the
 # connection string is defined in exactly one place (.env) whether you're
 # running the app or running a migration.
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-# Base.metadata (groundwork.db.models) is what `alembic revision
+# Base.metadata (jobsentinel.db.models) is what `alembic revision
 # --autogenerate` diffs against the live database to draft a migration.
 # Every ORM model in the project needs to inherit from that same Base to be
 # picked up here — a model that doesn't won't be tracked by Alembic at all.

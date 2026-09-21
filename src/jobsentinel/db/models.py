@@ -60,24 +60,32 @@ class Job(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 class Profile(Base):
-    """A structured profile snapshot (groundwork.extraction.schema.ExtractedProfile,
+    """A structured profile snapshot (jobsentinel.extraction.schema.ExtractedProfile,
     stored as-is via model_dump()) - one JSONB blob per row rather than
     normalized per-section tables.
 
     Append-only history, not a singleton: every resume/profile submission
     inserts a NEW row with a new `id`, rather than overwriting one row in
     place. Nothing here is ever updated after insert - that's also why
-    there's no `updated_at`, only `created_at`. `groundwork/db/profile.py`'s
+    there's no `updated_at`, only `created_at`. `jobsentinel/db/profile.py`'s
     get_latest_profile() picks the most recent row as "the" current
     profile, but older submissions stay queryable rather than being
-    silently discarded. Still single-user for now ("no real multi-tenant
-    auth yet" is a locked-in scope decision, BUILD_PLAN.md) - a user_id
-    column arrives with Slice 10's real users, to scope "latest" per user
-    instead of across the whole table.
+    silently discarded.
+
+    `user_id` holds the Clerk user ID (the JWT `sub` claim - see
+    jobsentinel.api.auth) that submitted this snapshot. Nullable because rows
+    inserted before the Clerk pass predate the column and genuinely don't
+    know whose they were (same "historical rows predate this column"
+    reasoning as AgentRun.profile_id) - every new row fills it in.
+    get_latest_profile/get_profile filter on it so one user's "current
+    profile" can never resolve to another user's row.
     """
     __tablename__ = "profiles"
     # Primary key (Postgres SERIAL) - a new one per submission, not reused.
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Clerk user ID (e.g. "user_2abc..."). Indexed - every real query filters
+    # on it (get_latest_profile's "most recent row for this user").
+    user_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     # The full ExtractedProfile, as ExtractedProfile.model_dump() produced it.
     # JSONB (not JSON) so Postgres can index/query into it later if needed.
     data: Mapped[dict] = mapped_column(JSONB)
@@ -88,7 +96,7 @@ class Profile(Base):
 
 class AgentRun(Base):
     """One invocation of the agent loop (BUILD_PLAN.md Slice 3) - e.g. one
-    call to groundwork.agent.score_fit.agent's invoke(). Token/cost
+    call to jobsentinel.agent.score_fit.agent's invoke(). Token/cost
     accounting lives here from the start (the stack's "token budgets belong
     in the schema from day one" principle - see CLAUDE.md), rather than
     being bolted on once cost actually becomes a problem.
@@ -97,7 +105,7 @@ class AgentRun(Base):
     set when the run begins (before the model is ever called - so a crash
     mid-run still leaves a row behind, not a silent gap), then `ended_at`/
     `outcome`/token counts/`cost_usd` are filled in once the run finishes
-    or fails. See groundwork.db.agent_runs.start_run/end_run.
+    or fails. See jobsentinel.db.agent_runs.start_run/end_run.
     """
     __tablename__ = "agent_runs"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -106,9 +114,20 @@ class AgentRun(Base):
     # dicts, not live ORM objects (see Profile's docstring for why), so
     # there's nothing for a relationship() to usefully load.
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    # Which profile snapshot this run was scored/conducted against - the
+    # same concrete id every call site resolves "give me a profile_id"
+    # down to (see score_fit.agent.invoke/job_agent.agent.invoke), never
+    # left as "whatever's latest" once a run is recorded. Without this, a
+    # job scored against two different profiles collapses to one
+    # indistinguishable "latest Score Fit result for this job" - exactly
+    # the bug get_latest_successful_result's profile_id filter below
+    # exists to close. Nullable because historical rows predate this
+    # column and genuinely don't know which profile they used (Score Fit
+    # was single-profile-in-practice then); every new row fills it in.
+    profile_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.id"), nullable=True)
     # Which capability this run was for - "score_fit" today, "job_agent"
     # once Slice 5 lands. This is what makes "has Score Fit succeeded for
-    # job X" a real query (get_latest_run in groundwork.db.agent_runs)
+    # job X" a real query (get_latest_run in jobsentinel.db.agent_runs)
     # instead of scanning every row regardless of which capability produced
     # it. Server default backfills existing rows (all score_fit so far, per
     # the migration) without requiring a value on every historical insert.
@@ -119,13 +138,23 @@ class AgentRun(Base):
     # Short human-readable status, e.g. "success" or "error: <message>" -
     # not the model's actual output, which lives in `result` below.
     outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The run's structured output - groundwork.agent.shared.schema.FitAssessment.
+    # The run's structured output - jobsentinel.agent.shared.schema.FitAssessment.
     # model_dump(), once the run succeeds. JSONB (queryable), not the
     # response text: this is what the Slice 5 Job Agent and the eventual UI
     # read instead of re-parsing prose. Null until end_run() records success.
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    # Anthropic prompt caching (see jobsentinel.agent.score_fit.agent's
+    # CacheConfig usage) splits what used to be one `inputTokens` count
+    # into three: a normal `inputTokens` for anything outside the cached
+    # prefix, `cacheWriteInputTokens` for the (pricier) call that first
+    # writes a prefix to cache, and `cacheReadInputTokens` for a later call
+    # that reads it back (cheaper than normal input). Tracked as separate
+    # columns, not folded into input_tokens, because they're billed at
+    # different per-token rates - see pricing.estimate_cost_usd.
+    cache_read_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    cache_write_tokens: Mapped[int | None] = mapped_column(nullable=True)
     # Numeric, not float - this is money. 10 total digits, 6 after the
     # decimal point: enough headroom for a very expensive run while still
     # tracking fractions of a cent (a single Sonnet call here costs cents,

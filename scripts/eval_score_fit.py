@@ -1,5 +1,5 @@
 """Slice 4 eval harness (BUILD_PLAN.md): runs the Score Fit agent
-(groundwork.agent.score_fit.agent) against a fixed set of job fixtures and
+(jobsentinel.agent.score_fit.agent) against a fixed set of job fixtures and
 prints results side by side, so calibration across postings is something you
 can eyeball in one run instead of piecing together from separate one-shot
 CLI calls.
@@ -21,19 +21,19 @@ whether the agent is properly critical:
                                                   unclear, good posting_underspecified calibration check
 
 Usage:
-    uv run python scripts/eval_score_fit.py
-    uv run python scripts/eval_score_fit.py --profile-id 14   # pin a specific profile snapshot
+    uv run python scripts/eval_score_fit.py --user-id user_2abc123
+    uv run python scripts/eval_score_fit.py --user-id user_2abc123 --profile-id 14   # pin a specific profile snapshot
 """
 
 import argparse
 
 from sqlalchemy import select
 
-from groundwork.agent.score_fit.agent import invoke
-from groundwork.db.agent_runs import KIND_SCORE_FIT, get_latest_run
-from groundwork.db.engine import get_engine
-from groundwork.db.jobs import get_job
-from groundwork.db.models import ToolCall
+from jobsentinel.agent.score_fit.agent import invoke
+from jobsentinel.db.agent_runs import KIND_SCORE_FIT, get_latest_run
+from jobsentinel.db.engine import get_engine
+from jobsentinel.db.jobs import get_job
+from jobsentinel.db.models import ToolCall
 
 FIXTURE_JOB_IDS = [422, 427, 1, 484, 176]
 
@@ -54,7 +54,7 @@ def get_tool_calls(engine, run_id: int) -> list[dict]:
 def check_run(run: dict, tool_calls: list[dict]) -> list[str]:
     """TODO (BUILD_PLAN.md Slice 4 design exercise - write this yourself):
     assert whatever's actually worth checking about `run` (an agent_runs
-    row - see groundwork.db.agent_runs.get_latest_run for its shape: id,
+    row - see jobsentinel.db.agent_runs.get_latest_run for its shape: id,
     job_id, kind, started_at/ended_at, outcome, result, token counts,
     cost_usd) and `tool_calls` (that run's tool_calls rows, oldest first -
     each has tool_name/args/result).
@@ -108,6 +108,9 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
+        "--user-id", required=True, help="Clerk user ID to score/own the profile lookup as"
+    )
+    parser.add_argument(
         "--profile-id",
         type=int,
         default=None,
@@ -123,7 +126,7 @@ def main() -> int:
         title = job["title"] if job else f"(job {job_id} not found)"
         print(f"scoring [{job_id}] {title!r}...")
 
-        payload = {"job_id": job_id}
+        payload = {"job_id": job_id, "user_id": args.user_id}
         if args.profile_id is not None:
             payload["profile_id"] = args.profile_id
         assessment = invoke(payload)
@@ -144,7 +147,7 @@ def main() -> int:
     # Full strengths/gaps, not just the match category - this is the raw
     # material for BUILD_PLAN's "manually review several runs for
     # hallucination" step: read each requirement/evidence pair against the
-    # actual job text and profile facts (groundwork.agent.score_fit.agent's
+    # actual job text and profile facts (jobsentinel.agent.score_fit.agent's
     # get_job_info/get_profile_facts tool_calls rows below have both, if you
     # want them without a separate DB query) and check the evidence is
     # really there, not a plausible-sounding paraphrase.

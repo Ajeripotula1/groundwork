@@ -2,13 +2,13 @@
 FastAPI auth dependency: verifies a Clerk-issued session token and returns
 the authenticated user's Clerk ID.
 
-How this fits the architecture: Clerk is the user directory - GroundWork
+How this fits the architecture: Clerk is the user directory - JobSentinel
 keeps no local `users` table (per CLAUDE.md's stack table: "Auth | Clerk |
 Drop-in React + ~15 lines JWKS verify"). Anywhere a request needs to know
 "which user is this," it depends on get_current_user_id below and gets back
 the Clerk `sub` claim (a stable string like "user_2abc...") - that string is
-what groundwork.db.profile scopes rows by, and what the Job Agent uses as
-its AgentCore Memory actor_id (see groundwork.agent.shared.memory).
+what jobsentinel.db.profile scopes rows by, and what the Job Agent uses as
+its AgentCore Memory actor_id (see jobsentinel.agent.shared.memory).
 
 The flow, end to end: the frontend (Slice 7 - not built yet) drops in
 Clerk's React SDK; a user signs in there, and Clerk hands the frontend a
@@ -32,7 +32,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from groundwork.config import get_settings
+from jobsentinel.config import get_settings
 
 _bearer_scheme = HTTPBearer(
     description="Clerk session token - the frontend's `getToken()` result."

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from groundwork.extraction.extract import extract_profile
+from jobsentinel.extraction.extract import extract_profile
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

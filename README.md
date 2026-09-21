@@ -1,4 +1,4 @@
-# GroundWork
+# JobSentinel
 
 An agentic job tracker and assistant for companies you actually care about.
 

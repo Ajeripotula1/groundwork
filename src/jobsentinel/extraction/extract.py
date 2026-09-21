@@ -9,8 +9,8 @@ the model to call it, and validate the arguments it returns through Pydantic.
 
 import boto3
 
-from groundwork.config import get_settings
-from groundwork.extraction.schema import ExtractedProfile
+from jobsentinel.config import get_settings
+from jobsentinel.extraction.schema import ExtractedProfile
 
 # Deliberately strict about what NOT to do: every clause here exists to
 # close off a specific hallucination path (composing a summary, inferring

@@ -4,24 +4,33 @@ job posting matches the candidate's profile (generated from their resume).
 This module *is* the AgentCore Runtime deployment unit for this agent - one
 `BedrockAgentCoreApp` per agent, in its own directory, because each agent
 gets its own container/runtime (CLAUDE.md: "Agent | AgentCore Runtime |
-Strands agent + tools, its own container"). groundwork.agent.job_agent.agent
+Strands agent + tools, its own container"). jobsentinel.agent.job_agent.agent
 is the other one; they don't share a runtime or an entrypoint.
 
 Run locally without deploying (one-shot, no server):
-    uv run python -m groundwork.agent.score_fit.agent '{"job_id": 182}'
-    uv run python -m groundwork.agent.score_fit.agent '{"job_id": 182, "profile_id": 3}'
+    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182, "user_id": "user_2abc123"}'
+    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182, "user_id": "user_2abc123", "profile_id": 3}'
 
 Run the local AgentCore dev server (same ASGI app AgentCore Runtime runs in
 prod, just on your machine):
-    uv run python -m groundwork.agent.score_fit.agent
-    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 182}'
+    uv run python -m jobsentinel.agent.score_fit.agent
+    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 182, "user_id": "user_2abc123"}'
 
-Deploy for real: `agentcore configure --entrypoint src/groundwork/agent/score_fit/agent.py`,
-then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 182}'`.
+Deploy for real: `agentcore configure --entrypoint src/jobsentinel/agent/score_fit/agent.py`,
+then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 182, "user_id": "user_2abc123"}'`.
 
-Set GROUNDWORK_TRACE=1 to send model/tool call spans to Jaeger (start it
+`user_id` (a Clerk ID) is a plain payload field, not anything this module
+verifies itself - the API layer's jobsentinel.api.auth.get_current_user_id
+is the only place a token is ever checked (per CLAUDE.md's hard
+architectural rule, the agent never calls the API, so it can't reuse that
+dependency either); this module just trusts whatever caller already
+authenticated the request and resolved this id. It's what scopes "the
+current profile" to the right person - see get_latest_profile/get_profile
+below.
+
+Set JOBSENTINEL_TRACE=1 to send model/tool call spans to Jaeger (start it
 first: `docker compose up -d jaeger`, view at http://localhost:16686) - see
-groundwork.agent.shared.tracing.
+jobsentinel.agent.shared.tracing.
 """
 
 import json
@@ -29,20 +38,20 @@ import os
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent, tool
-from strands.models import BedrockModel
+from strands.models import BedrockModel, CacheConfig
 
-from groundwork.agent.shared.pricing import estimate_cost_usd
-from groundwork.agent.shared.schema import MATCH_DEFINITIONS, FitAssessment
-from groundwork.agent.shared.tracing import enable_jaeger_tracing
-from groundwork.config import get_settings
-from groundwork.db.agent_runs import KIND_SCORE_FIT, end_run, log_tool_call, start_run
-from groundwork.db.engine import get_engine
-from groundwork.db.jobs import get_job
-from groundwork.db.profile import get_latest_profile, get_profile
+from jobsentinel.agent.shared.pricing import estimate_cost_usd
+from jobsentinel.agent.shared.schema import MATCH_DEFINITIONS, FitAssessment
+from jobsentinel.agent.shared.tracing import enable_jaeger_tracing
+from jobsentinel.config import get_settings
+from jobsentinel.db.agent_runs import KIND_SCORE_FIT, end_run, log_tool_call, start_run
+from jobsentinel.db.engine import get_engine
+from jobsentinel.db.jobs import get_job
+from jobsentinel.db.profile import get_latest_profile, get_profile
 
 settings = get_settings()
 
-if os.environ.get("GROUNDWORK_TRACE"):
+if os.environ.get("JOBSENTINEL_TRACE"):
     enable_jaeger_tracing()
 
 # There must be exactly one instance per deployment - this registers the
@@ -50,10 +59,12 @@ if os.environ.get("GROUNDWORK_TRACE"):
 app = BedrockAgentCoreApp()
 
 
-def build_tools(job_id: int, run_id: int, profile_id: int | None = None) -> list:
+def build_tools(
+    job_id: int, run_id: int, user_id: str, profile_id: int | None = None
+) -> list:
     """Bind get_job_info/get_profile_facts to one AgentRun so every call
     logs itself to `tool_calls` (BUILD_PLAN.md Slice 3: "Log every tool
-    call to tool_calls") - see groundwork.db.agent_runs.log_tool_call. A
+    call to tool_calls") - see jobsentinel.db.agent_runs.log_tool_call. A
     factory, not module-level tools, because run_id/job_id/profile_id
     differ per invocation - see build_agent below.
 
@@ -106,11 +117,16 @@ def build_tools(job_id: int, run_id: int, profile_id: int | None = None) -> list
             no matching profile exists.
         """
         engine = get_engine()
+        # profile_id is closure-bound (see this function's docstring) and
+        # was already resolved + ownership-checked once in invoke() below
+        # before build_tools was ever called - no user_id filter needed on
+        # this internal lookup. See get_profile's docstring for when a
+        # user_id filter IS required (client-supplied ids).
         if profile_id is not None:
             profile = get_profile(engine, profile_id)
             not_found = f"no profile with id {profile_id}"
         else:
-            profile = get_latest_profile(engine)
+            profile = get_latest_profile(engine, user_id)
             not_found = "no profile has been submitted yet"
         if profile is None:
             result = {"error": not_found}
@@ -126,13 +142,13 @@ _MATCH_DEFINITIONS_TEXT = "\n".join(
     f"- {match.value}: {definition}" for match, definition in MATCH_DEFINITIONS.items()
 )
 
-_SYSTEM_PROMPT_TEMPLATE = """You are GroundWork's fit-scoring agent. Your job is to assess how well a
+_SYSTEM_PROMPT_TEMPLATE = """You are JobSentinel's fit-scoring agent. Your job is to assess how well a
 specific candidate matches a specific job posting, using only tools - never your own
 assumptions or prior knowledge.
 
 ## Why grounding is non-negotiable
 
-GroundWork's entire premise is that it never invents experience the candidate hasn't
+JobSentinel's entire premise is that it never invents experience the candidate hasn't
 described, and never assumes things about a company or role it hasn't actually looked up.
 You are the first step in that pipeline. A fit assessment that pads over gaps with
 plausible-sounding guesses, or credits the candidate with skills "probably" implied by
@@ -196,7 +212,7 @@ keep it to a single sentence of direction, separate from the match category itse
 
 Every user-facing field (summary, strengths/gaps notes, recommendation_note) speaks directly
 to the candidate as "you" - never in the third person ("the candidate should...") and never
-by name, even though get_profile_facts() may return one. GroundWork is single-user today, but
+by name, even though get_profile_facts() may return one. JobSentinel is single-user today, but
 writing in second person now avoids rewriting every prompt once multi-user identity exists -
 at that point third-person narration wouldn't even reliably say whose profile this is.
 
@@ -220,6 +236,16 @@ def build_agent(tools: list) -> Agent:
     bedrock_model = BedrockModel(
         model_id=settings.bedrock_agent_model_id,  # Claude Sonnet 4.6 (Bedrock)
         region_name=settings.aws_region,
+        # Anthropic prompt caching (see CacheConfig docstring): places a
+        # cachePoint after the (large, static-per-run) grounding-rules
+        # system prompt and after the tool specs. A repeat call within the
+        # TTL (default 5m, no extra cost to opt into) reads that prefix
+        # back near-free instead of billing it as fresh input tokens -
+        # cheap for the common case here, re-scoring the same job/profile
+        # while iterating. The first call in a burst still pays a slightly
+        # higher "cache write" rate for that prefix, so this only pays off
+        # across >=2 calls sharing it, not a single one-off run.
+        cache_config=CacheConfig(strategy="auto", tools_ttl=True),
     )
     # callback_handler=None (-> Strands' null_callback_handler): Strands'
     # default callback_handler live-streams assistant text to stdout as
@@ -228,7 +254,7 @@ def build_agent(tools: list) -> Agent:
     # full response twice under local/one-shot testing.
     #
     # structured_output_model=FitAssessment: forces every call on this agent
-    # to end with a validated FitAssessment (see groundwork.agent.shared.schema)
+    # to end with a validated FitAssessment (see jobsentinel.agent.shared.schema)
     # instead of free-text markdown - the whole point being that
     # AgentResult.structured_output is what invoke() persists to
     # agent_runs.result for the Job Agent/the UI to read later.
@@ -247,6 +273,9 @@ def invoke(payload: dict, context=None) -> dict:
 
     Expected payload keys:
       job_id      (int, required) - the job to score
+      user_id     (str, required) - Clerk ID of the candidate being scored;
+        see this module's docstring for why this is a trusted payload field,
+        not something re-verified here
       profile_id  (int, optional) - score against this specific profile
         snapshot instead of the latest submission (see build_tools' docstring)
 
@@ -256,10 +285,13 @@ def invoke(payload: dict, context=None) -> dict:
     touched, same as the interactive CLI this replaced.
     """
     job_id = payload.get("job_id")
+    user_id = payload.get("user_id")
     profile_id = payload.get("profile_id")
 
     if job_id is None:
         return {"error": "job_id is required"}
+    if not user_id:
+        return {"error": "user_id is required"}
 
     engine = get_engine()
 
@@ -267,14 +299,30 @@ def invoke(payload: dict, context=None) -> dict:
     # something that was never going to work.
     if get_job(engine, job_id) is None:
         return {"error": f"no job with id {job_id}"}
+    # Resolve to one concrete id here rather than leaving "latest" to be
+    # re-resolved later inside get_profile_facts() - this run's row (and
+    # get_latest_successful_result's profile_id filter, which is what makes
+    # "score this job against profile 1, then again against profile 3"
+    # distinguishable afterward) needs one fixed id to record, not
+    # "whatever was latest at tool-call time."
+    #
+    # get_profile(..., user_id) here (not the bare get_profile(id) the tool
+    # closure below uses) is deliberate: `profile_id` at this point may be
+    # client-supplied (the API's ScoreFitRequest.profile_id), so this is the
+    # ownership check that stops one user from scoring against another
+    # user's profile by guessing/enumerating its id - see get_profile's
+    # docstring.
     if profile_id is not None:
-        if get_profile(engine, profile_id) is None:
+        if get_profile(engine, profile_id, user_id) is None:
             return {"error": f"no profile with id {profile_id}"}
-    elif get_latest_profile(engine) is None:
-        return {"error": "no profile has been submitted yet"}
+    else:
+        profile = get_latest_profile(engine, user_id)
+        if profile is None:
+            return {"error": "no profile has been submitted yet"}
+        profile_id = profile["id"]
 
-    run = start_run(engine, job_id, kind=KIND_SCORE_FIT)
-    agent = build_agent(build_tools(job_id, run["id"], profile_id))
+    run = start_run(engine, job_id, kind=KIND_SCORE_FIT, profile_id=profile_id)
+    agent = build_agent(build_tools(job_id, run["id"], user_id, profile_id))
 
     try:
         result = agent(f"Score the fit for job id {job_id}.")
@@ -292,8 +340,18 @@ def invoke(payload: dict, context=None) -> dict:
         raise RuntimeError("agent finished without producing a FitAssessment")
 
     usage = result.metrics.accumulated_usage
+    # cacheReadInputTokens/cacheWriteInputTokens are only present when the
+    # model/provider actually cached something this run - absent (not 0)
+    # otherwise, hence .get(..., 0) rather than a direct key lookup. See
+    # build_agent's cache_config and pricing.estimate_cost_usd.
+    cache_read = usage.get("cacheReadInputTokens", 0)
+    cache_write = usage.get("cacheWriteInputTokens", 0)
     cost = estimate_cost_usd(
-        settings.bedrock_agent_model_id, usage["inputTokens"], usage["outputTokens"]
+        settings.bedrock_agent_model_id,
+        usage["inputTokens"],
+        usage["outputTokens"],
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
     )
     assessment_dict = assessment.model_dump(mode="json")
     end_run(
@@ -303,6 +361,8 @@ def invoke(payload: dict, context=None) -> dict:
         result=assessment_dict,
         input_tokens=usage["inputTokens"],
         output_tokens=usage["outputTokens"],
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
         cost_usd=cost,
     )
 

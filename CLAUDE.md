@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repository is currently **pre-code**: it contains only `README.md`. There is no git repo initialized, no package manifests, and no build/lint/test tooling yet. Everything below reflects the architecture and constraints decided in the README, not code that exists yet — treat it as the target shape for whatever gets scaffolded first.
+Backend MVP (BUILD_PLAN.md Slices 0-6): job data loaded, profile upload/extraction, a Score Fit agent, a Job Agent (interview/resume/cover-letter/fit-Q&A with AgentCore Memory short-term recall), and a `GET/POST /jobs` + `/jobs/{id}/score` + `/jobs/{id}/agent` API surface. No frontend yet — that's next.
 
-There is no established build/lint/test command set yet. Once code is scaffolded (per the "Build order" below), update this file with the actual commands (how to run the CLI-tested agent core, how to run the FastAPI app locally, how to run the frontend dev server, how to run a single test) — do not fabricate commands before they exist.
+Commands in daily use:
+- `docker compose up -d postgres` — local Postgres+pgvector
+- `uv run alembic upgrade head` — apply migrations
+- `uv run uvicorn jobsentinel.api.main:app --reload --port 8000` — run the API locally
+- `uv run pytest -m "not integration"` — default test run (mocked DB/agent calls, no Postgres/Bedrock needed); drop the marker filter to include the real-Bedrock extraction test
+- `uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182}'` / `jobsentinel.agent.job_agent.agent '{"job_id": 182, "message": "..."}'` — run either agent one-shot from the CLI, no server
 
 ## Working with the user (collaboration mode)
 
@@ -17,9 +22,9 @@ The user is using this project to learn production-grade backend engineering, sc
 - `BUILD_PLAN.md` is the source of truth for scope and sequencing; it's written curriculum-style — each slice names the concepts it's meant to teach. Update it if scope or order changes; don't silently drift from it.
 - Prefer asking questions and pointing at the relevant concept over just implementing when the user is working through a new piece of a layer themselves.
 
-## What GroundWork is
+## What JobSentinel is
 
-An agentic job tracker: the user follows specific companies, GroundWork polls their ATS job boards daily, and when a relevant posting appears an agent scores fit and then **interviews the user** to tailor a resume/cover letter — it is explicitly designed to never invent experience the user hasn't described. Coverage is intentionally limited to followed companies (ATS APIs are per-company, not a job-market-wide search) — this is a deliberate scope decision, not a gap to fill.
+An agentic job tracker: the user follows specific companies, JobSentinel polls their ATS job boards daily, and when a relevant posting appears an agent scores fit and then **interviews the user** to tailor a resume/cover letter — it is explicitly designed to never invent experience the user hasn't described. Coverage is intentionally limited to followed companies (ATS APIs are per-company, not a job-market-wide search) — this is a deliberate scope decision, not a gap to fill.
 
 ## Architecture (target)
 
