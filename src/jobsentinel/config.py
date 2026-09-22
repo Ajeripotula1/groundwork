@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # (the poller, one-off scripts) don't need this to start; auth.py raises
     # loudly at the point a request actually needs it.
     clerk_issuer: str = ""
+    cors_allow_origins: list[str] = ["http://localhost:5173"]
 
 
 @lru_cache
