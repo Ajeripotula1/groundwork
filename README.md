@@ -95,4 +95,3 @@ Built as feature-driven vertical slices (see `BUILD_PLAN.md`), not one fully-com
 
 ### UI Layer
 - Function: Clean, minamalist UI for users to access data, manage their own, and converse with Agent
-- Features: Deferred — this is the last layer built (see `BUILD_PLAN.md`'s vertical slices). Early development and testing happens via CLI and direct API calls only; this section gets filled in once we reach the frontend slice.
