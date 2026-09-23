@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react'
 import { buttonVariants } from '@/components/ui/button'
 
+// Layout Wrapper for all pages (Navbar and centred content)
 export function AppLayout() {
   return (
     <>

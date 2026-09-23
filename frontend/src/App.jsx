@@ -11,6 +11,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 function App() {
   return (
     <Routes>
+      {/* Clerk Sign-in and Sign-out routes */}
       <Route
         path="/sign-in/*"
         element={
@@ -27,7 +28,7 @@ function App() {
           </div>
         }
       />
-
+      {/* Pathless App Layout Wrapper for all pages */}
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
         <Route path="jobs" element={<JobListPage />} />

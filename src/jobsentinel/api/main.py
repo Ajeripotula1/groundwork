@@ -24,9 +24,6 @@ from jobsentinel.api.routers import jobs, profile
 from jobsentinel.config import get_settings
 app = FastAPI(title="JobSentinel API")
 
-app.include_router(profile.router)
-app.include_router(jobs.router)
-
 settings = get_settings()
 
 app.add_middleware(
@@ -36,6 +33,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     )
+
+app.include_router(profile.router)
+app.include_router(jobs.router)
 
 @app.get("/health")
 def health() -> dict:

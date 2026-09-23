@@ -1,4 +1,9 @@
-// TODO: useJobs() (src/hooks) + a Card per posting, linking to /jobs/:jobId
+import { JobsTable } from "@/components/JobsTable"
+
 export function JobListPage() {
-  return <div>Job list</div>
+  return (
+    <div>
+      <JobsTable />
+    </div>
+  )
 }

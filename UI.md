@@ -188,16 +188,23 @@ State map — what lives where:
 3. `components/jobs/JobsTable.jsx` — props `jobs`, `filter` (only used for the empty-message text). shadcn `Table`. Columns: **Title** (`<Link to={`/jobs/${job.id}`} className="font-medium hover:underline">`), **Company** (`Badge variant="secondary"` showing `board_token`), **Source** (plain text, `hidden md:table-cell`), **Fetched** (`formatDate(job.fetched_at)`, `hidden sm:table-cell`). If `jobs` is empty, render one full-width row: `No jobs match "{filter}"`. Row key = `job.id`.
 4. `pages/JobListPage.jsx`:
    - `const { data: jobs, isPending, isError, error, refetch } = useJobs()`; `const [filter, setFilter] = useState('')`.
-   - `filtered = useMemo(() => jobs?.filter(j => j.title.toLowerCase().includes(filter.trim().toLowerCase())) ?? [], [jobs, filter])`. Plain `includes` on title only; 594 rows needs no debounce, `useDeferredValue`, or pagination.
+   - `filtered = useMemo(() => jobs?.filter(j => j.title.toLowerCase().includes(filter.trim().toLowerCase())) ?? [], [jobs, filter])`. Plain `includes` on title only; 623 rows needs no debounce, `useDeferredValue`, or pagination.
    - Layout `space-y-4`: `h1` "Jobs" (`text-2xl font-semibold`); muted line `Showing {filtered.length} of {jobs.length}` (only when loaded); shadcn `Input` (`type="search"`, `placeholder="Filter by title…"`, `aria-label="Filter jobs by title"`, `className="max-w-sm"`).
    - `isPending` → 8 `Skeleton` rows (`h-10 w-full`); `isError` → `<ErrorAlert error={error} onRetry={refetch} />`; else `<JobsTable />`.
 
+**As built (2026-09-22) — deviates from the spec above in a few small ways, noted here so this doesn't silently drift:**
+- Single `components/JobsTable.jsx`, not `components/jobs/JobsTable.jsx` — no `jobs/` subfolder yet since it's the only jobs-specific component so far; revisit the subfolder once `ScoreFitPanel`/`JobAgentChat` land in Step 5 and there's more than one file to group.
+- `JobsTable` owns `useJobs()` and the `filter` state itself (self-contained) rather than `JobListPage` fetching/filtering and passing `jobs`/`filter` down as props. `JobListPage` is just a thin wrapper. Fine at this size; if a second consumer of the same data ever needs the list (e.g. a dashboard widget), lift the query back up to the page then rather than duplicating it.
+- Columns actually shipped: **Title** (link), **Company** (plain text, `board_token` — not yet the real `jobs.company` display name, see the deferred DB note above), **Source** (`Badge variant="outline"`, not Company), **Last synced** (not "Fetched" — named for what `fetched_at` actually is; see the deferred `fetched_at`/`posted_at` note above), plus a distinct "no jobs loaded at all" vs. "no jobs match your search" empty state (spec only had the latter).
+- Errors render via the already-built `components/ErrorAlert.jsx` (`error`/`title`/`onRetry` props, exactly as Step 1 spec'd it) rather than a hand-rolled `Alert`.
+- No `refetch`/"Try again" wired up yet on this page — `ErrorAlert` supports `onRetry` but `JobsTable` doesn't pass one. Worth adding when this page next gets touched.
+
 **Done when:**
-- Table shows ~594 jobs; typing "engineer" narrows the count live; clearing restores all.
+- Table shows ~623 jobs; typing "engineer" narrows the count live; clearing restores all.
 - Network tab: exactly one `GET /jobs`; navigating to Profile and back within 5 min does **not** refetch.
 - **Sign out and reload `/jobs` directly** (public route — Decision 9): the table still loads. `GET /jobs` still succeeds with no `Authorization` header this time (it's a public endpoint — `apiFetch` just omits the header when `getToken()` returns nothing signed out).
 - Clicking a title goes to `/jobs/182` (still a stub).
-- Stop uvicorn, hard-reload → `ErrorAlert` reads "Can't reach the server…"; restart uvicorn, click "Try again" → table loads (proves the `ApiError(0, …)` path and that query retries didn't hang the UI).
+- Stop uvicorn, hard-reload → `ErrorAlert` reads "Can't reach the server…"; restart uvicorn, reload → table loads again (proves the `ApiError(0, …)` path didn't hang the UI; no retry button yet, see deviation note above).
 
 ---
 
