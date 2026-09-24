@@ -13,29 +13,56 @@ Centralizing the cleanup here (instead of copy-pasting BeautifulSoup calls
 into three scripts) is what makes the three explore_*.py scripts produce the
 literal same normalized shape - the input Slice 1's `jobs` table gets
 designed around, per BUILD_PLAN.md.
+
+`description` is stored as **Markdown**, not flattened plain text (see
+html_to_text below) - it's still just a string column, still just as
+LLM-readable (arguably more so - structure survives instead of getting
+thrown away), and the frontend renders it with react-markdown rather than
+dangerouslySetInnerHTML, so no raw HTML ever reaches the DOM. See UI.md
+Step 4.
 """
 
 import html
 import re
 from datetime import datetime, timezone
 
-from bs4 import BeautifulSoup
+from markdownify import markdownify
 
 
 def html_to_text(raw_html: str | None) -> str:
-    """Turn escaped/raw HTML job content into plain, readable text."""
+    """Turn escaped/raw HTML job content into Markdown.
+
+    Plain get_text() (the previous approach here) ignores tag structure
+    entirely - <h2>, <p>, and <li> boundaries all vanish, so a five-section
+    posting collapses into one giant paragraph, and bold/heading emphasis
+    is lost outright since there's no plain-text way to represent it.
+    markdownify walks the same parsed tree but *keeps* that structure as
+    Markdown syntax ("## heading", "**bold**", "- item") instead of
+    discarding it - callers still run clean_whitespace() afterward to
+    collapse the resulting runs of blank lines.
+    """
     if not raw_html:
         return ""
     decoded = html.unescape(raw_html)
-    soup = BeautifulSoup(decoded, "html.parser")
-    return soup.get_text(" ", strip=True)
+    return markdownify(decoded, heading_style="ATX")
 
 
 def clean_whitespace(text: str | None) -> str:
-    """Collapse repeated spaces/tabs and blank lines down to single ones."""
+    """Collapse repeated spaces/tabs and blank lines down to single ones.
+
+    Leading whitespace on a line is left alone - Markdown uses it to mark a
+    nested list item's continuation, so collapsing it there (as a blanket
+    `re.sub(r"[ \t]+", " ", text)` over the whole string would) silently
+    un-nests any sub-bullets a posting happens to have.
+    """
     if not text:
         return ""
-    text = re.sub(r"[ \t]+", " ", text)
+    lines = []
+    for line in text.split("\n"):
+        leading = re.match(r"[ \t]*", line).group()
+        rest = re.sub(r"[ \t]+", " ", line[len(leading):])
+        lines.append(leading + rest)
+    text = "\n".join(lines)
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     return text.strip()
 

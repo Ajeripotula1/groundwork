@@ -26,10 +26,11 @@ dependencies = [
     # scripts/load_jobs.py makes pulling job data a real part of the app,
     # not just a throwaway exploration step.
     "requests>=2.31",
-    # HTML-to-text extraction for job descriptions (scripts/job_text.py) -
-    # Greenhouse/Lever both hand back rich-text HTML that needs stripping
-    # down to plain text before it's usable by an LLM.
-    "beautifulsoup4>=4.12",
+    # HTML-to-Markdown extraction for job descriptions (scripts/job_text.py)
+    # - Greenhouse/Lever both hand back rich-text HTML; converting to
+    # Markdown (not flattened plain text) keeps headings/bold/bullets
+    # instead of discarding them, while staying just as LLM-readable.
+    "markdownify>=1.2.3",
     # The API unit (Slice 2 on): thin HTTP layer over jobsentinel/db and,
     # from Slice 3 on, jobsentinel/agent. Mangum-wrapping for Lambda is a
     # later (deployment) slice - locally this just runs under uvicorn.

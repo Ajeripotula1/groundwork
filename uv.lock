@@ -982,10 +982,10 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
-    { name = "beautifulsoup4" },
     { name = "bedrock-agentcore" },
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "markdownify" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -1008,12 +1008,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
-    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "bedrock-agentcore", specifier = ">=1.23.1" },
     { name = "bedrock-agentcore-starter-toolkit", marker = "extra == 'dev'", specifier = ">=0.3.13" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=1.0" },
+    { name = "markdownify", specifier = ">=1.2.3" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
